@@ -11,6 +11,8 @@ set objJson = new aspJSON
 sub Main()
     dim data, messages, message, res
 
+    Debug()
+
     'Example: Generating a JSON string from a dictionary object
     set data = CreateObject("Scripting.Dictionary")
     call data.Add("model", "gpt-3.5-turbo")
@@ -69,6 +71,122 @@ function CloneDict(data)
     set CloneDict = result
 end function
 
+function JsonParse(data)
+    dim i, element, content, isString, level, result, key, value
+    i = 1
+    content = replace(data, vbcrlf, "")
+    content = replace(content, vbtab, "")
+    content = trim(content)
+    isString = false
+    level = 0
+
+    if left(content, 1) = "{" then
+        set result = CreateObject("Scripting.Dictionary")
+
+        do
+            key = ""
+
+            for i = i + 1 to len(content)
+                element = mid(content, i, 1)
+
+                select case element
+                    case "\"
+                        key = key & mid(content, i, 2)
+                        i = i + 1
+                    case """"
+                        if isString then
+                            isString = false
+                        else
+                            isString = true
+                        end if
+
+                        key = key & element
+                    case ":"
+                        if isString = false then
+                            exit for
+                        end if
+
+                        key = key & element
+                    case else
+                        key = key & element
+                end select
+            next
+
+            key = trim(key)
+
+            if left(key, 1) = """" then
+                key = mid(key, 2, len(key) - 2)
+            end if
+
+            key = JsonUnescape(key)
+            value = ""
+
+            for i = i + 1 to len(content)
+                element = mid(content, i, 1)
+
+                select case element
+                    case "\"
+                        value = value & mid(content, i, 2)
+                        i = i + 1
+                    case """"
+                        if isString then
+                            isString = false
+                        else
+                            isString = true
+                        end if
+
+                        value = value & element
+                    case "{", "["
+                        if isString = false then
+                            level = level + 1
+                        end if
+
+                        value = value & element
+                    case "}", "]"
+                        if isString = false then
+                            if level <= 0 then
+                                level = 0
+                                exit for
+                            end if
+
+                            level = level - 1
+                        end if
+
+                        value = value & element
+                    case ","
+                        if level <= 0 then
+                            level = 0
+                            exit for
+                        end if
+
+                        value = value & element
+                    case else
+                        value = value & element
+                end select
+            next
+
+            value = trim(value)
+
+            select case left(value, 1)            
+                case """"
+                    value = mid(value, 2, len(value) - 2)
+                case "{"
+                    set value = CloneDict(JsonParse(value))
+            end select
+
+            'TODO: Add numeric converter
+
+            result.Add key, value
+
+            if i + 1 >= len(content) then
+                exit do
+            end if
+        loop
+    end if
+
+    set JsonParse = result
+end function
+
 function JsonSerialize(data)
     dim i, element, result
     result = ""
@@ -121,6 +239,35 @@ function JsonSerialize(data)
     JsonSerialize = result
 end function
 
+function JsonUnescape(data)
+    dim i, element, result
+    result = ""
+
+    for i = 1 to len(data)
+        element = mid(data, i, 1)
+
+        if element = "\" then
+            i = i + 1
+            element = mid(data, i, 1)
+
+            select case element
+                case "\"
+                    result = result & "\"
+                case "n"
+                    result = result & vbcrlf
+                case "t"
+                    result = result & vbcrlf
+                case """"
+                    result = result & """"
+            end select
+        else
+            result = result & element
+        end if
+    next
+
+    JsonUnescape = result
+end function
+
 function JsonEscape(data)
     dim result
     result = data
@@ -142,6 +289,13 @@ sub Breakpoint(message)
 
     wscript.Echo(message)
     wscript.Quit()
+end sub
+
+sub Debug()
+    dim test, test2
+    test = objFile.OpenTextFile(directory & "\res.json").ReadAll()
+    set test2 = JsonParse(test)
+    Breakpoint(JsonSerialize(test2))
 end sub
 
 Main()
