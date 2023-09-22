@@ -72,7 +72,7 @@ function CloneDict(data)
 end function
 
 function JsonParse(data)
-    dim i, element, content, isString, level, result, key, value
+    dim i, element, element2, content, isString, level, result, key, value, list
     i = 1
     content = replace(data, vbcrlf, "")
     content = replace(content, vbtab, "")
@@ -80,54 +80,16 @@ function JsonParse(data)
     isString = false
     level = 0
 
-    if left(content, 1) = "{" then
-        set result = CreateObject("Scripting.Dictionary")
-
-        do
-            key = ""
-
-            for i = i + 1 to len(content)
-                element = mid(content, i, 1)
-
-                select case element
-                    case "\"
-                        key = key & mid(content, i, 2)
-                        i = i + 1
-                    case """"
-                        if isString then
-                            isString = false
-                        else
-                            isString = true
-                        end if
-
-                        key = key & element
-                    case ":"
-                        if isString = false then
-                            exit for
-                        end if
-
-                        key = key & element
-                    case else
-                        key = key & element
-                end select
-            next
-
-            key = trim(key)
-
-            if left(key, 1) = """" then
-                key = mid(key, 2, len(key) - 2)
-            end if
-
-            key = JsonUnescape(key)
+    select case left(content, 1)
+        case "{"
+            set result = CreateObject("Scripting.Dictionary")
+            list = array()
             value = ""
 
-            for i = i + 1 to len(content)
+            for i = 2 to len(content)
                 element = mid(content, i, 1)
 
                 select case element
-                    case "\"
-                        value = value & mid(content, i, 2)
-                        i = i + 1
                     case """"
                         if isString then
                             isString = false
@@ -136,6 +98,9 @@ function JsonParse(data)
                         end if
 
                         value = value & element
+                    case "\"
+                        key = key & mid(content, i, 2)
+                        i = i + 1
                     case "{", "["
                         if isString = false then
                             level = level + 1
@@ -146,45 +111,241 @@ function JsonParse(data)
                         if isString = false then
                             if level <= 0 then
                                 level = 0
-                                exit for
+                                value = trim(value)
+                                Push list, value
+                                value = ""
+                            else
+                                value = value & element
                             end if
 
                             level = level - 1
+                        else
+                            value = value & element
                         end if
-
-                        value = value & element
                     case ","
-                        if level <= 0 then
-                            level = 0
-                            exit for
+                        if isString = false then
+                            if level <= 0 then
+                                value = trim(value)
+                                Push list, value
+                                value = ""
+                            else
+                                value = value & element
+                            end if
+                        else
+                            value = value & element
                         end if
-
-                        value = value & element
                     case else
                         value = value & element
                 end select
             next
 
-            value = trim(value)
+            for each element in list
+                key = ""
 
-            select case left(value, 1)            
-                case """"
-                    value = mid(value, 2, len(value) - 2)
-                case "{"
-                    set value = CloneDict(JsonParse(value))
-            end select
+                for i = 1 to len(element)
+                    element2 = mid(element, i, 1)
 
-            'TODO: Add numeric converter
+                    select case element2
+                        case """"
+                            if isString then
+                                isString = false
+                            else
+                                isString = true
+                            end if
 
-            result.Add key, value
+                            key = key & element2
+                        case "\"
+                            key = key & mid(element, i, 2)
+                            i = i + 1
+                        case ":"
+                            if isString = false then
+                                exit for
+                            end if
 
-            if i + 1 >= len(content) then
-                exit do
-            end if
-        loop
+                            key = key & element2
+                        case else
+                            key = key & element2
+                    end select
+                next
+
+                key = trim(key)
+
+                if left(key, 1) = """" then
+                    key = mid(key, 2, len(key) - 2)
+                end if
+
+                value = ""
+
+                for i = i + 1 to len(element)
+                    element2 = mid(element, i, 1)
+
+                    select case element2
+                        case """"
+                            if isString then
+                                isString = false
+                            else
+                                isString = true
+                            end if
+
+                            value = value & element2
+                        case "\"
+                            value = value & mid(element, i, 2)
+                            i = i + 1
+                        case "{", "["
+                            if isString = false then
+                                level = level + 1
+                            end if
+
+                            value = value & element2
+                        case "}", "]"
+                            if isString = false then
+                                if level <= 0 then
+                                    level = 0
+                                    exit for
+                                end if
+
+                                level = level - 1
+                            end if
+
+                            value = value & element2
+                        case ","
+                            if isString = false then
+                                if level <= 0 then
+                                    exit for
+                                end if
+                            end if
+
+                            value = value & element2
+                        case else
+                            value = value & element2
+                    end select
+                next
+
+                value = trim(value)
+
+                select case left(value, 1)            
+                    case """"
+                        value = mid(value, 2, len(value) - 2)
+                    case "{"
+                        set value = CloneDict(JsonParse(value))
+                    case "["
+                        value = JsonParse(value)
+                    case else
+                        if isnumeric(value) then
+                            if instr(value, ".") then
+                                value = cdbl(value)
+                            else
+                                value = clng(value)
+                            end if
+                        end if
+                end select
+
+                if typename(value) = "String" then
+                    value = JsonUnescape(value)
+                end if
+                
+                result.Add key, value
+            next
+        case "["
+            result = array()
+            value = ""
+
+            for i = 2 to len(content)
+                element = mid(content, i, 1)
+
+                select case element
+                    case """"
+                        if isString then
+                            isString = false
+                        else
+                            isString = true
+                        end if
+
+                        value = value & element
+                    case "\"
+                        value = value & mid(content, i, 2)
+                        i = i + 1
+                    case "{", "["
+                        if isString = false then
+                            level = level + 1
+                        end if
+
+                        value = value & element
+                    case "}", "]"
+                        if isString = false then
+                            if level <= 0 then
+                                level = 0
+                                value = trim(value)
+
+                                select case left(value, 1)            
+                                    case """"
+                                        value = mid(value, 2, len(value) - 2)
+                                    case "{"
+                                        set value = CloneDict(JsonParse(value))
+                                    case "["
+                                        value = JsonParse(value)
+                                    case else
+                                        if isnumeric(value) then
+                                            if instr(value, ".") then
+                                                value = cdbl(value)
+                                            else
+                                                value = clng(value)
+                                            end if
+                                        end if
+                                end select
+
+                                Push result, value
+                                value = ""
+                            else
+                                value = value & element
+                            end if
+
+                            level = level - 1
+                        else
+                            value = value & element
+                        end if
+                    case ","
+                        if isString = false then
+                            if level <= 0 then
+                                value = trim(value)
+
+                                select case left(value, 1)            
+                                    case """"
+                                        value = mid(value, 2, len(value) - 2)
+                                    case "{"
+                                        set value = CloneDict(JsonParse(value))
+                                    case "["
+                                        value = JsonParse(value)
+                                    case else
+                                        if isnumeric(value) then
+                                            if instr(value, ".") then
+                                                value = cdbl(value)
+                                            else
+                                                value = clng(value)
+                                            end if
+                                        end if
+                                end select
+
+                                Push result, value
+                                value = ""
+                            else
+                                value = value & element
+                            end if
+                        else
+                            value = value & element
+                        end if
+                    case else
+                        value = value & element
+                end select
+            next
+    end select
+
+    if typename(result) = "Dictionary" then
+        set JsonParse = result
+        exit function
     end if
-
-    set JsonParse = result
+    
+    JsonParse = result
 end function
 
 function JsonSerialize(data)
@@ -201,7 +362,7 @@ function JsonSerialize(data)
                 select case typename(data.Item(element))
                     case "Boolean"
                         result = result & lcase(data.Item(element))
-                    case "Integer", "Double"
+                    case "Integer", "Double", "Long"
                         result = result & data.Item(element)
                     case "String"
                         result = result & """" & JsonEscape(data.Item(element)) & """"
@@ -212,7 +373,10 @@ function JsonSerialize(data)
                 result = result & ", "
             next
 
-            result = left(result, len(result) - 2)
+            if len(result) > 2 then
+                result = left(result, len(result) - 2)
+            end if
+
             result = result & "}"
         case "Variant()"
             result = result & "["
@@ -221,7 +385,7 @@ function JsonSerialize(data)
                 select case typename(element)
                     case "Boolean"
                         result = result & lcase(element)
-                    case "Integer", "Double"
+                    case "Integer", "Double", "Long"
                         result = result & element
                     case "String"
                         result = result & """" & JsonEscape(element) & """"
